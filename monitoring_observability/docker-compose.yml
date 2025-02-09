@@ -1,0 +1,88 @@
+services:
+    filebeat:
+        image: docker.elastic.co/beats/filebeat:7.13.1
+        user: root
+        volumes:
+            - ./image/filebeat/filebeat.yml:/usr/share/filebeat/filebeat.yml:ro
+            - /var/lib/docker/containers:/var/lib/docker/containers:ro
+            - /var/run/docker.sock:/var/run/docker.sock:ro
+        depends_on:
+            - elasticsearch
+        networks:
+            - inner
+
+    elasticsearch:
+        hostname: elasticsearch
+        image: docker.elastic.co/elasticsearch/elasticsearch:7.13.1
+        environment:
+            - node.name=es01
+            - cluster.name=es-docker-cluster
+            - discovery.type=single-node
+            - bootstrap.memory_lock=true
+            - ES_JAVA_OPTS=-Xms512m -Xmx512m
+            - xpack.security.enabled=false
+            - ELASTIC_PASSWORD=spolastic
+        ulimits:
+            memlock:
+                soft: -1
+                hard: -1
+        volumes:
+            - elasticsearch-data:/usr/share/elasticsearch/data
+        ports:
+            - '9200:9200'
+        healthcheck:
+            interval: 20s
+            retries: 10
+            test: curl -s http://localhost:9200/_cluster/health | grep -vq '"status":"red"'
+        networks:
+            - inner
+
+    kibana:
+        hostname: kibana
+        image: docker.elastic.co/kibana/kibana:7.13.1
+        depends_on:
+            - elasticsearch
+        ports:
+            - '5601:5601'
+        environment:
+            - ELASTICSEARCH_HOSTS=http://elasticsearch:9200
+            - ELASTICSEARCH_URL=http://elasticsearch:9200
+            - XPACK_APM_SERVICEMAPENABLED=true
+            - XPACK_APM_ENABLED=true
+        healthcheck:
+            interval: 30s
+            retries: 10
+            test: curl --write-out 'HTTP %{http_code}' --fail --silent --output /dev/null http://localhost:5601/api/status
+        networks:
+            - inner
+
+    apm-server:
+        image: docker.elastic.co/apm/apm-server:7.13.1
+        depends_on:
+            - elasticsearch
+            - kibana
+        ports:
+            - "8200:8200"
+        command: >
+            apm-server -e
+              -E apm-server.host=0.0.0.0:8200
+              -E apm-server.secret_token=xxVpmQB2HMzCL9PgBHVrnxjNXXw5J7bd79DFm6sjBJR5HPXDhcF8MSb3vv4bpg44
+              -E setup.kibana.host=kibana:5601
+              -E setup.template.enabled=true
+              -E output.elasticsearch.hosts=["elasticsearch:9200"]
+        networks:
+            - inner
+        healthcheck:
+            interval: 10s
+            retries: 12
+            test: curl --write-out 'HTTP %{http_code}' --fail --silent --output /dev/null http://localhost:8200/
+
+
+networks:
+    inner:
+        name: monitoring_network
+        driver: bridge
+        external: true  # Allow external 
+
+volumes:
+    elasticsearch-data:
