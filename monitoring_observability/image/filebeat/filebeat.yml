@@ -1,13 +1,13 @@
+filebeat.inputs:
 - type: docker
   containers:
+    ids:
+      - "*"
     path: "/var/run/docker.sock"
   combine_partial: true
   processors:
     - add_docker_metadata:
         host: "unix:///var/run/docker.sock"
-    - add_labels:
-        labels:
-          app: "ginhexapp"
 
 output.elasticsearch:
   hosts: ["elasticsearch:9200"]
